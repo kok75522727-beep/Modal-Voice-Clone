@@ -1,26 +1,20 @@
 import modal
 
 def download_models():
-    # pkg_resources ကို အတင်းဆွဲခေါ်ပြီးမှ TTS ကို စခေါ်ပါမည်
-    import pkg_resources
     from TTS.api import TTS
     TTS(model_name="voice_conversion_models/multilingual/vctk/freevc24", progress_bar=False)
 
-# 🚀 ဖြေရှင်းချက်: လိုအပ်တဲ့ စနစ်တွေအားလုံးကို အလွှာမခွဲဘဲ တစ်ပေါင်းတည်း သွင်းခြင်း
+# 🚀 ဖြေရှင်းချက်အစစ်: Modal pip အစား Command ဖြင့်သွင်းပြီး pkg_resources ပြဿနာအတွက် setuptools အဟောင်းကို နောက်ဆုံးမှ ဖိသွင်းပါသည်
 image = (
     modal.Image.debian_slim(python_version="3.10")
-    .apt_install("ffmpeg", "espeak-ng")
-    .run_commands("pip install --upgrade pip setuptools wheel")
-    .pip_install(
-        "setuptools",
-        "wheel",
-        "packaging",
-        "torch",
-        "torchaudio",
-        "TTS==0.22.0", 
-        "fastapi[standard]", 
-        "python-multipart", 
-        "pydub"
+    .apt_install("ffmpeg", "espeak-ng", "libsndfile1")
+    .run_commands(
+        "pip install --upgrade pip",
+        "pip install wheel packaging",
+        "pip install torch torchaudio",
+        "pip install fastapi[standard] python-multipart pydub",
+        "pip install TTS==0.22.0",
+        "pip install setuptools==69.5.1"  # 👈 pkg_resources မပျောက်အောင် နောက်ဆုံးပိတ် သွင်းခြင်း
     )
     .run_function(download_models)
 )
