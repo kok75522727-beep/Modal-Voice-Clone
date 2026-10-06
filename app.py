@@ -4,7 +4,6 @@ def download_models():
     from TTS.api import TTS
     TTS(model_name="voice_conversion_models/multilingual/vctk/freevc24", progress_bar=False)
 
-# 🚀 ဖြေရှင်းချက်အစစ်: Modal pip အစား Command ဖြင့်သွင်းပြီး pkg_resources ပြဿနာအတွက် setuptools အဟောင်းကို နောက်ဆုံးမှ ဖိသွင်းပါသည်
 image = (
     modal.Image.debian_slim(python_version="3.10")
     .apt_install("ffmpeg", "espeak-ng", "libsndfile1")
@@ -14,14 +13,15 @@ image = (
         "pip install torch torchaudio",
         "pip install fastapi[standard] python-multipart pydub",
         "pip install TTS==0.22.0",
-        "pip install setuptools==69.5.1"  # 👈 pkg_resources မပျောက်အောင် နောက်ဆုံးပိတ် သွင်းခြင်း
+        "pip install setuptools==69.5.1"
     )
     .run_function(download_models)
 )
 
 app = modal.App("oneteam-voice-clone-pro")
 
-@app.function(image=image, gpu="T4", timeout=600)
+# 🚀 GPU="T4" ကို ဖြုတ်လိုက်ပြီး ကတ်မလိုသော ရိုးရိုး CPU ဖြင့်သာ အလုပ်လုပ်စေပါမည်
+@app.function(image=image, timeout=1200)
 @modal.asgi_app()
 def my_voice_clone_api():
     from fastapi import FastAPI, UploadFile, File, HTTPException
@@ -34,8 +34,74 @@ def my_voice_clone_api():
 
     web_app = FastAPI()
 
-    # Model ကို GPU ပေါ်တင်မည်
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    # Model ကို CPU ပေါ်မှာပဲ တင်မည်
+    device = "cpu"
+    tts = TTS(model_name="voice_conversion_models/multilingual/vctk/freevc24", progress_bar=False).to(device)
+
+    @web_app.post("/")
+    async def process_audio(base_audio: UploadFile = File(...), ref_audio: UploadFile = File(...)):
+        try:
+            base_bytes = await base_audio.read()
+            ref_bytes = await ref_audio.read()
+            
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_ref:
+                tmp_ref.write(ref_bytes)
+                ref_path = tmp_ref.name
+                
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_base:
+                tmp_base.write(base_bytes)
+                base_path = tmp_base.name
+
+            audio = AudioSegment.from_file(base_path)
+            chunk_length_ms = 15000
+            chunks = [audio[i:i + chunk_length_ms] for i in range(0, len(audio), chunk_length_ms)]
+            combined_audio = AudioSegment.empty()
+
+            for chunk in chunks:
+                chunk_path = tempfile.mktemp(suffix=".wav")
+                chunkဟုတ်ပါတယ် အစ်ကို။ ကတ်ကိစ္စနဲ့ အချိန်တွေ ထပ်မကုန်ခံတာ အကောင်းဆုံးပါပဲ။ အစ်ကို့ Website အမြန်ဆုံး ပြန်အလုပ်လုပ်သွားဖို့က ပိုအရေးကြီးပါတယ်။
+
+အောက်က **ကတ်လုံးဝမလိုတဲ့ ရိုးရိုး CPU ဗားရှင်း ကုဒ်အပြည့်အစုံ** ကိုသာ GitHub က `app.py` ဖိုင်ထဲမှာ အကုန်လုံး ဖျက်ပြီး အစားထိုးလိုက်ပါတော့ဗျာ -
+
+```python
+import modal
+
+def download_models():
+    from TTS.api import TTS
+    TTS(model_name="voice_conversion_models/multilingual/vctk/freevc24", progress_bar=False)
+
+image = (
+    modal.Image.debian_slim(python_version="3.10")
+    .apt_install("ffmpeg", "espeak-ng", "libsndfile1")
+    .run_commands(
+        "pip install --upgrade pip",
+        "pip install wheel packaging",
+        "pip install torch torchaudio",
+        "pip install fastapi[standard] python-multipart pydub",
+        "pip install TTS==0.22.0",
+        "pip install setuptools==69.5.1"
+    )
+    .run_function(download_models)
+)
+
+app = modal.App("oneteam-voice-clone-pro")
+
+# 🚀 GPU ဖြုတ်လိုက်ပြီး ကတ်မလိုသော ရိုးရိုး CPU ဖြင့်သာ အလုပ်လုပ်စေပါမည် (Timeout ကို မိနစ် ၂၀ ထိ တိုးပေးထားပါတယ်)
+@app.function(image=image, timeout=1200)
+@modal.asgi_app()
+def my_voice_clone_api():
+    from fastapi import FastAPI, UploadFile, File, HTTPException
+    from fastapi.responses import Response
+    import tempfile
+    import os
+    from pydub import AudioSegment
+    import torch
+    from TTS.api import TTS
+
+    web_app = FastAPI()
+
+    # Model ကို CPU ပေါ်မှာပဲ တင်မည်
+    device = "cpu"
     tts = TTS(model_name="voice_conversion_models/multilingual/vctk/freevc24", progress_bar=False).to(device)
 
     @web_app.post("/")
