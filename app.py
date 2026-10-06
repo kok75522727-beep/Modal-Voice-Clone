@@ -1,16 +1,27 @@
 import modal
 
 def download_models():
+    # pkg_resources ကို အတင်းဆွဲခေါ်ပြီးမှ TTS ကို စခေါ်ပါမည်
+    import pkg_resources
     from TTS.api import TTS
     TTS(model_name="voice_conversion_models/multilingual/vctk/freevc24", progress_bar=False)
 
-# 🚀 ဖြေရှင်းချက်: Python 3.10 ကို ပြန်သုံးပြီး၊ pkg_resources ပြဿနာမတက်စေရန် setuptools အဟောင်းကို သတ်မှတ်ပေးထားပါသည်
+# 🚀 ဖြေရှင်းချက်: လိုအပ်တဲ့ စနစ်တွေအားလုံးကို အလွှာမခွဲဘဲ တစ်ပေါင်းတည်း သွင်းခြင်း
 image = (
     modal.Image.debian_slim(python_version="3.10")
     .apt_install("ffmpeg", "espeak-ng")
-    .pip_install("setuptools==69.5.1", "wheel") # 👈 ဒီနေရာလေးက တကယ့်အဖြေပါ
-    .pip_install("torch", "torchaudio")
-    .pip_install("TTS", "fastapi[standard]", "python-multipart", "pydub")
+    .run_commands("pip install --upgrade pip setuptools wheel")
+    .pip_install(
+        "setuptools",
+        "wheel",
+        "packaging",
+        "torch",
+        "torchaudio",
+        "TTS==0.22.0", 
+        "fastapi[standard]", 
+        "python-multipart", 
+        "pydub"
+    )
     .run_function(download_models)
 )
 
@@ -24,8 +35,8 @@ def my_voice_clone_api():
     import tempfile
     import os
     from pydub import AudioSegment
-    from TTS.api import TTS
     import torch
+    from TTS.api import TTS
 
     web_app = FastAPI()
 
