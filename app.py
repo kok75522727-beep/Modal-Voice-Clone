@@ -20,7 +20,6 @@ image = (
 
 app = modal.App("oneteam-voice-clone-pro")
 
-# 🚀 GPU ဖြုတ်လိုက်ပြီး ကတ်မလိုသော ရိုးရိုး CPU ဖြင့်သာ အလုပ်လုပ်စေပါမည် (Timeout ကို မိနစ် ၂၀ ထိ တိုးပေးထားပါတယ်)
 @app.function(image=image, timeout=1200)
 @modal.asgi_app()
 def my_voice_clone_api():
@@ -34,7 +33,6 @@ def my_voice_clone_api():
 
     web_app = FastAPI()
 
-    # Model ကို CPU ပေါ်မှာပဲ တင်မည်
     device = "cpu"
     tts = TTS(model_name="voice_conversion_models/multilingual/vctk/freevc24", progress_bar=False).to(device)
 
