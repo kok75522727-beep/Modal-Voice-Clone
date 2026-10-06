@@ -4,19 +4,19 @@ def download_models():
     from TTS.api import TTS
     TTS(model_name="voice_conversion_models/multilingual/vctk/freevc24", progress_bar=False)
 
-# Python 3.10 ကို သုံးပေးမှ TTS က Error မတက်မှာဖြစ်လို့ python_version သတ်မှတ်ပေးလိုက်ပါတယ်
+# Command ဖြင့် setuptools ကို အတင်းသွင်းခိုင်းခြင်း နှင့် espeak-ng ကို ထည့်သွင်းခြင်း
 image = (
     modal.Image.debian_slim(python_version="3.10")
-    .apt_install("ffmpeg")
-    .pip_install("setuptools", "wheel", "packaging") # pkg_resources အတွက် အရင်ဆုံး သွင်းသည်
+    .apt_install("ffmpeg", "espeak-ng")
+    .run_commands("pip install --upgrade pip setuptools wheel packaging")
     .pip_install(
         "fastapi[standard]", 
         "python-multipart",
         "pydub",
-        "TTS", 
         "torch",
         "torchaudio"
     )
+    .pip_install("TTS")
     .run_function(download_models)
 )
 
@@ -35,7 +35,7 @@ def my_voice_clone_api():
 
     web_app = FastAPI()
 
-    # GPU ပေါ်တင်မည်
+    # Model ကို GPU ပေါ်တင်မည်
     device = "cuda" if torch.cuda.is_available() else "cpu"
     tts = TTS(model_name="voice_conversion_models/multilingual/vctk/freevc24", progress_bar=False).to(device)
 
