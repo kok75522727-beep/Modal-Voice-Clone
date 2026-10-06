@@ -4,19 +4,13 @@ def download_models():
     from TTS.api import TTS
     TTS(model_name="voice_conversion_models/multilingual/vctk/freevc24", progress_bar=False)
 
-# Command ဖြင့် setuptools ကို အတင်းသွင်းခိုင်းခြင်း နှင့် espeak-ng ကို ထည့်သွင်းခြင်း
+# 🚀 ဖြေရှင်းချက်: Python 3.9 ကို ပြောင်းသုံးထားပါသည် (pkg_resources error လုံးဝမတက်စေရန်)
 image = (
-    modal.Image.debian_slim(python_version="3.10")
+    modal.Image.debian_slim(python_version="3.9")
     .apt_install("ffmpeg", "espeak-ng")
-    .run_commands("pip install --upgrade pip setuptools wheel packaging")
-    .pip_install(
-        "fastapi[standard]", 
-        "python-multipart",
-        "pydub",
-        "torch",
-        "torchaudio"
-    )
-    .pip_install("TTS")
+    .pip_install("setuptools", "wheel", "packaging")
+    .pip_install("torch", "torchaudio")
+    .pip_install("TTS", "fastapi[standard]", "python-multipart", "pydub")
     .run_function(download_models)
 )
 
