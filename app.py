@@ -1,6 +1,11 @@
 import modal
 
-# ၁။ တကယ့် AI Model ကို ကိုယ်ပိုင်ဆာဗာမှာ သွင်းမည့်အပိုင်း
+# ၁။ AI Model ကို ဆာဗာစတင်ချိန်မှာ ကြိုတင်ဒေါင်းလုဒ်ဆွဲထားမည့် Function
+def download_models():
+    from TTS.api import TTS
+    TTS(model_name="voice_conversion_models/multilingual/vctk/freevc24", progress_bar=False)
+
+# ၂။ တကယ့် AI Model ကို ကိုယ်ပိုင်ဆာဗာမှာ သွင်းမည့်အပိုင်း (run_function ဖြင့် တွဲထည့်ထားသည်)
 image = (
     modal.Image.debian_slim()
     .apt_install("ffmpeg")
@@ -12,16 +17,10 @@ image = (
         "torch",
         "torchaudio"
     )
+    .run_function(download_models)
 )
 
 app = modal.App("oneteam-voice-clone-pro")
-
-# ၂။ ဆာဗာစတင်တာနဲ့ AI Model ကို အသင့် ဒေါင်းလုဒ်ဆွဲထားမည့်စနစ်
-@app.build()
-def download_models():
-    from TTS.api import TTS
-    # အသံပြောင်းပေးမယ့် FreeVC AI Model ကို ကိုယ်ပိုင်ဆာဗာထဲ ဆွဲထည့်မည်
-    TTS(model_name="voice_conversion_models/multilingual/vctk/freevc24", progress_bar=False)
 
 # ၃။ GPU ('T4') ကိုသုံးပြီး အသံအမြန်ပြောင်းမည့် API
 @app.function(image=image, gpu="T4", timeout=600)
@@ -67,7 +66,7 @@ def my_voice_clone_api():
                 
                 chunk_out_path = tempfile.mktemp(suffix=".wav")
                 
-                # 🚀 ကိုယ်ပိုင် GPU ဖြင့် အသံပွားခြင်း (Hugging Face မလိုတော့ပါ)
+                # 🚀 ကိုယ်ပိုင် GPU ဖြင့် အသံပွားခြင်း
                 tts.voice_conversion_to_file(source_wav=chunk_path, target_wav=ref_path, file_path=chunk_out_path)
                 
                 converted_chunk = AudioSegment.from_file(chunk_out_path)
