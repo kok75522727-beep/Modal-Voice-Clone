@@ -5,11 +5,12 @@ def download_models():
     from TTS.api import TTS
     TTS(model_name="voice_conversion_models/multilingual/vctk/freevc24", progress_bar=False)
 
-# ၂။ တကယ့် AI Model ကို ကိုယ်ပိုင်ဆာဗာမှာ သွင်းမည့်အပိုင်း (run_function ဖြင့် တွဲထည့်ထားသည်)
+# ၂။ တကယ့် AI Model ကို ကိုယ်ပိုင်ဆာဗာမှာ သွင်းမည့်အပိုင်း (setuptools ထပ်ဖြည့်ထားသည်)
 image = (
     modal.Image.debian_slim()
     .apt_install("ffmpeg")
     .pip_install(
+        "setuptools", 
         "fastapi[standard]", 
         "python-multipart",
         "pydub",
