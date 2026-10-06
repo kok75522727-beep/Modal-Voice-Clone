@@ -1,95 +1,94 @@
 import modal
 
-# Modal ဆာဗာမှာ လိုအပ်တဲ့ စနစ်တွေ (ffmpeg အပါအဝင်) သွင်းခြင်း
+# ၁။ တကယ့် AI Model ကို ကိုယ်ပိုင်ဆာဗာမှာ သွင်းမည့်အပိုင်း
 image = (
     modal.Image.debian_slim()
     .apt_install("ffmpeg")
     .pip_install(
         "fastapi[standard]", 
         "python-multipart",
-        "gradio_client",
-        "pydub"
+        "pydub",
+        "TTS", 
+        "torch",
+        "torchaudio"
     )
 )
 
-app = modal.App("voice-clone-api")
+app = modal.App("oneteam-voice-clone-pro")
 
-# အချိန်ကြာနိုင်တဲ့အတွက် timeout ကို ၆၀၀ စက္ကန့် (၁၀ မိနစ်) အထိ ပေးထားပါတယ်
-@app.function(image=image, timeout=600)
+# ၂။ ဆာဗာစတင်တာနဲ့ AI Model ကို အသင့် ဒေါင်းလုဒ်ဆွဲထားမည့်စနစ်
+@app.build()
+def download_models():
+    from TTS.api import TTS
+    # အသံပြောင်းပေးမယ့် FreeVC AI Model ကို ကိုယ်ပိုင်ဆာဗာထဲ ဆွဲထည့်မည်
+    TTS(model_name="voice_conversion_models/multilingual/vctk/freevc24", progress_bar=False)
+
+# ၃။ GPU ('T4') ကိုသုံးပြီး အသံအမြန်ပြောင်းမည့် API
+@app.function(image=image, gpu="T4", timeout=600)
 @modal.asgi_app()
-def generate_audio():
-    # GitHub က မမြင်အောင် import တွေကို အတွင်းထဲ ရွှေ့ထားလိုက်ပါတယ်
+def my_voice_clone_api():
     from fastapi import FastAPI, UploadFile, File, HTTPException
     from fastapi.responses import Response
     import tempfile
     import os
-    
+    from pydub import AudioSegment
+    from TTS.api import TTS
+    import torch
+
     web_app = FastAPI()
-    
+
+    # Model ကို GPU ပေါ်တင်ထားမည် (အမြန်ပြောင်းနိုင်ရန်)
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    tts = TTS(model_name="voice_conversion_models/multilingual/vctk/freevc24", progress_bar=False).to(device)
+
     @web_app.post("/")
     async def process_audio(base_audio: UploadFile = File(...), ref_audio: UploadFile = File(...)):
         try:
-            from gradio_client import Client, handle_file
-            from pydub import AudioSegment
-            
-            # ပို့လိုက်တဲ့ အသံဖိုင်တွေကို ဖတ်မယ်
             base_bytes = await base_audio.read()
             ref_bytes = await ref_audio.read()
             
-            # ယာယီဖိုင်လေးတွေ ဆောက်ပြီး မှတ်ထားမယ်
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp_ref:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_ref:
                 tmp_ref.write(ref_bytes)
                 ref_path = tmp_ref.name
                 
             with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_base:
                 tmp_base.write(base_bytes)
                 base_path = tmp_base.name
-                
-            # အသံကို ၁၅ စက္ကန့်စီ ပိုင်းမယ်
+
+            # Memory မပြည့်အောင် ၁၅ စက္ကန့်စီ ပိုင်းပြီး GPU နဲ့ ပြောင်းမည်
             audio = AudioSegment.from_file(base_path)
             chunk_length_ms = 15000
             chunks = [audio[i:i + chunk_length_ms] for i in range(0, len(audio), chunk_length_ms)]
-            
-            client = Client("hugging-apps/x-vc-voice-conversion")
             combined_audio = AudioSegment.empty()
-            
-            # အပိုင်းတစ်ပိုင်းချင်းစီကို အသံပွားမယ်
-            for idx, chunk in enumerate(chunks):
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_chunk:
-                    chunk.export(tmp_chunk.name, format="wav")
-                    chunk_path = tmp_chunk.name
+
+            for chunk in chunks:
+                chunk_path = tempfile.mktemp(suffix=".wav")
+                chunk.export(chunk_path, format="wav")
                 
-                try:
-                    result = client.predict(
-                        source_audio=handle_file(chunk_path),
-                        reference_audio=handle_file(ref_path),
-                        mode="Offline (highest quality)",
-                        chunk_ms=2400,
-                        current_ms=120,
-                        future_ms=100,
-                        smooth_ms=20,
-                        api_name="/convert"
-                    )
-                    converted_chunk = AudioSegment.from_file(result[0])
-                    combined_audio += converted_chunk
-                except Exception as chunk_err:
-                    raise HTTPException(status_code=500, detail=f"Hugging Face က အပိုင်း {idx+1} ကို လက်မခံပါ: {str(chunk_err)}")
-                finally:
-                    os.unlink(chunk_path)
-                    
-            # အသံတွေပြန်ဆက်ပြီး Website ဆီ ပြန်ပို့မယ်
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_final:
-                combined_audio.export(tmp_final.name, format="wav")
-                with open(tmp_final.name, 'rb') as f:
-                    final_bytes = f.read()
-                    
+                chunk_out_path = tempfile.mktemp(suffix=".wav")
+                
+                # 🚀 ကိုယ်ပိုင် GPU ဖြင့် အသံပွားခြင်း (Hugging Face မလိုတော့ပါ)
+                tts.voice_conversion_to_file(source_wav=chunk_path, target_wav=ref_path, file_path=chunk_out_path)
+                
+                converted_chunk = AudioSegment.from_file(chunk_out_path)
+                combined_audio += converted_chunk
+                
+                os.unlink(chunk_path)
+                os.unlink(chunk_out_path)
+
+            final_out_path = tempfile.mktemp(suffix=".wav")
+            combined_audio.export(final_out_path, format="wav")
+            
+            with open(final_out_path, 'rb') as f:
+                final_bytes = f.read()
+                
             os.unlink(base_path)
             os.unlink(ref_path)
-            os.unlink(tmp_final.name)
-            
+            os.unlink(final_out_path)
+
             return Response(content=final_bytes, media_type="audio/wav")
             
         except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+            raise HTTPException(status_code=500, detail=f"ကိုယ်ပိုင် AI Error: {str(e)}")
             
     return web_app
