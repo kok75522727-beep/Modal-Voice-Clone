@@ -4,11 +4,11 @@ def download_models():
     from TTS.api import TTS
     TTS(model_name="voice_conversion_models/multilingual/vctk/freevc24", progress_bar=False)
 
-# 🚀 ဖြေရှင်းချက်: Python 3.9 ကို ပြောင်းသုံးထားပါသည် (pkg_resources error လုံးဝမတက်စေရန်)
+# 🚀 ဖြေရှင်းချက်: Python 3.10 ကို ပြန်သုံးပြီး၊ pkg_resources ပြဿနာမတက်စေရန် setuptools အဟောင်းကို သတ်မှတ်ပေးထားပါသည်
 image = (
-    modal.Image.debian_slim(python_version="3.9")
+    modal.Image.debian_slim(python_version="3.10")
     .apt_install("ffmpeg", "espeak-ng")
-    .pip_install("setuptools", "wheel", "packaging")
+    .pip_install("setuptools==69.5.1", "wheel") # 👈 ဒီနေရာလေးက တကယ့်အဖြေပါ
     .pip_install("torch", "torchaudio")
     .pip_install("TTS", "fastapi[standard]", "python-multipart", "pydub")
     .run_function(download_models)
