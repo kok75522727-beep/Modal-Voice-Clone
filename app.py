@@ -20,7 +20,8 @@ image = (
 
 app = modal.App("oneteam-voice-clone-pro")
 
-@app.function(image=image, timeout=1200)
+# 🚀 GPU "T4" ကို အသုံးပြုထားသဖြင့် အလွန်မြန်ဆန်ပါမည်
+@app.function(image=image, gpu="T4", timeout=600)
 @modal.asgi_app()
 def my_voice_clone_api():
     from fastapi import FastAPI, UploadFile, File, HTTPException
@@ -33,7 +34,8 @@ def my_voice_clone_api():
 
     web_app = FastAPI()
 
-    device = "cpu"
+    # 🚀 CPU အစား GPU (cuda) ကို တိုက်ရိုက်သုံးပါမည်
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     tts = TTS(model_name="voice_conversion_models/multilingual/vctk/freevc24", progress_bar=False).to(device)
 
     @web_app.post("/")
@@ -51,7 +53,8 @@ def my_voice_clone_api():
                 base_path = tmp_base.name
 
             audio = AudioSegment.from_file(base_path)
-            chunk_length_ms = 15000
+            # GPU သုံးထားသဖြင့် ၃၀ စက္ကန့်စာ အပိုင်းကြီးများခွဲပြီး ပိုမြန်အောင် တွက်ချက်မည်
+            chunk_length_ms = 30000
             chunks = [audio[i:i + chunk_length_ms] for i in range(0, len(audio), chunk_length_ms)]
             combined_audio = AudioSegment.empty()
 
@@ -82,6 +85,6 @@ def my_voice_clone_api():
             return Response(content=final_bytes, media_type="audio/wav")
             
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"ကိုယ်ပိုင် AI Error: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"GPU AI Error: {str(e)}")
             
     return web_app
