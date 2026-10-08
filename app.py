@@ -1,9 +1,12 @@
 import modal
 
+# AI Model များကို ဆာဗာတည်ဆောက်ချိန်တွင် ကြိုတင်ဒေါင်းလုဒ်ဆွဲထားမည်
 def download_models():
     from TTS.api import TTS
+    # အဆင့်မြင့် Voice Conversion Model ကို အသုံးပြုထားပါသည်
     TTS(model_name="voice_conversion_models/multilingual/vctk/freevc24", progress_bar=False)
 
+# မြန်နှုန်းမြင့် T4 GPU နှင့် လိုအပ်သော AI စနစ်များ တပ်ဆင်ခြင်း
 image = (
     modal.Image.debian_slim(python_version="3.10")
     .apt_install("ffmpeg", "espeak-ng", "libsndfile1")
@@ -20,8 +23,8 @@ image = (
 
 app = modal.App("oneteam-voice-clone-pro")
 
-# 🚀 GPU "T4" ကို အသုံးပြုထားသဖြင့် အလွန်မြန်ဆန်ပါမည်
-@app.function(image=image, gpu="T4", timeout=600)
+# 🚀 GPU T4 ကို အပြည့်အဝ အသုံးပြု၍ အချိန်တိုအတွင်း လုပ်ဆောင်ပါမည်
+@app.function(image=image, gpu="T4", timeout=1200)
 @modal.asgi_app()
 def my_voice_clone_api():
     from fastapi import FastAPI, UploadFile, File, HTTPException
@@ -34,7 +37,7 @@ def my_voice_clone_api():
 
     web_app = FastAPI()
 
-    # 🚀 CPU အစား GPU (cuda) ကို တိုက်ရိုက်သုံးပါမည်
+    # GPU စနစ်ဖြင့် AI အင်ဂျင်ကို မောင်းနှင်မည်
     device = "cuda" if torch.cuda.is_available() else "cpu"
     tts = TTS(model_name="voice_conversion_models/multilingual/vctk/freevc24", progress_bar=False).to(device)
 
@@ -52,8 +55,8 @@ def my_voice_clone_api():
                 tmp_base.write(base_bytes)
                 base_path = tmp_base.name
 
+            # အသံဖိုင်များကို AI မှ အကောင်းဆုံး ခွဲခြမ်းစိတ်ဖြာနိုင်ရန် 30s အပိုင်းကြီးများ ပိုင်းခြားမည်
             audio = AudioSegment.from_file(base_path)
-            # GPU သုံးထားသဖြင့် ၃၀ စက္ကန့်စာ အပိုင်းကြီးများခွဲပြီး ပိုမြန်အောင် တွက်ချက်မည်
             chunk_length_ms = 30000
             chunks = [audio[i:i + chunk_length_ms] for i in range(0, len(audio), chunk_length_ms)]
             combined_audio = AudioSegment.empty()
@@ -64,6 +67,7 @@ def my_voice_clone_api():
                 
                 chunk_out_path = tempfile.mktemp(suffix=".wav")
                 
+                # Zero-shot AI အင်ဂျင်ဖြင့် အသံအရောင်နှင့် လေယူလေသိမ်းကို အတိအကျ ကူးယူခြင်း
                 tts.voice_conversion_to_file(source_wav=chunk_path, target_wav=ref_path, file_path=chunk_out_path)
                 
                 converted_chunk = AudioSegment.from_file(chunk_out_path)
@@ -73,6 +77,9 @@ def my_voice_clone_api():
                 os.unlink(chunk_out_path)
 
             final_out_path = tempfile.mktemp(suffix=".wav")
+            
+            # အသံပိုမိုကြည်လင် သဘာဝကျစေရန် Audio Normalize အနည်းငယ် လုပ်ပေးမည်
+            combined_audio = combined_audio.normalize()
             combined_audio.export(final_out_path, format="wav")
             
             with open(final_out_path, 'rb') as f:
@@ -85,6 +92,6 @@ def my_voice_clone_api():
             return Response(content=final_bytes, media_type="audio/wav")
             
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"GPU AI Error: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"AI Engine Error: {str(e)}")
             
     return web_app
