@@ -1,97 +1,112 @@
 import modal
 
-# AI Model များကို ဆာဗာတည်ဆောက်ချိန်တွင် ကြိုတင်ဒေါင်းလုဒ်ဆွဲထားမည်
 def download_models():
-    from TTS.api import TTS
-    # အဆင့်မြင့် Voice Conversion Model ကို အသုံးပြုထားပါသည်
-    TTS(model_name="voice_conversion_models/multilingual/vctk/freevc24", progress_bar=False)
+    from transformers import AutoModel, AutoTokenizer
+    # VoxCPM2 AI မော်ဒယ်အကြီးစားကို ကြိုတင် ဒေါင်းလုဒ်ဆွဲထားမည်
+    model_id = "openbmb/VoxCPM2"
+    AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+    AutoModel.from_pretrained(model_id, trust_remote_code=True)
 
-# မြန်နှုန်းမြင့် T4 GPU နှင့် လိုအပ်သော AI စနစ်များ တပ်ဆင်ခြင်း
 image = (
     modal.Image.debian_slim(python_version="3.10")
-    .apt_install("ffmpeg", "espeak-ng", "libsndfile1")
+    .apt_install("ffmpeg", "libsndfile1")
     .run_commands(
         "pip install --upgrade pip",
-        "pip install wheel packaging",
-        "pip install torch torchaudio",
-        "pip install fastapi[standard] python-multipart pydub",
-        "pip install TTS==0.22.0",
-        "pip install setuptools==69.5.1"
+        "pip install torch torchaudio transformers soundfile librosa fastapi[standard] python-multipart pydub numpy"
     )
     .run_function(download_models)
 )
 
 app = modal.App("oneteam-voice-clone-pro")
 
-# 🚀 GPU T4 ကို အပြည့်အဝ အသုံးပြု၍ အချိန်တိုအတွင်း လုပ်ဆောင်ပါမည်
-@app.function(image=image, gpu="T4", timeout=1200)
+@app.function(image=image, gpu="T4", timeout=1500)
 @modal.asgi_app()
 def my_voice_clone_api():
-    from fastapi import FastAPI, UploadFile, File, HTTPException
+    from fastapi import FastAPI, UploadFile, File, HTTPException, Form
     from fastapi.responses import Response
     import tempfile
     import os
-    from pydub import AudioSegment
     import torch
-    from TTS.api import TTS
+    import librosa
+    import numpy as np
+    import soundfile as sf
+    from transformers import AutoModel, AutoTokenizer
+    import re
 
     web_app = FastAPI()
 
-    # GPU စနစ်ဖြင့် AI အင်ဂျင်ကို မောင်းနှင်မည်
+    # Model ကို GPU ပေါ် တင်မည်
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    tts = TTS(model_name="voice_conversion_models/multilingual/vctk/freevc24", progress_bar=False).to(device)
+    model_id = "openbmb/VoxCPM2"
+    tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+    model = AutoModel.from_pretrained(model_id, trust_remote_code=True).to(device)
+    model.eval()
+
+    # စာရှည်ပါက Memory မပြည့်အောင် အလိုအလျောက် ပိုင်းဖြတ်မည့်စနစ်
+    def split_text_into_chunks(text, max_length=120):
+        text = text.replace("\n", " ")
+        raw_chunks = re.split(r'(?<=[။၊])\s*', text)
+        chunks, current_chunk = [], ""
+        for chunk in raw_chunks:
+            chunk = chunk.strip()
+            if not chunk: continue
+            if len(current_chunk) + len(chunk) <= max_length:
+                current_chunk += " " + chunk
+            else:
+                if current_chunk: chunks.append(current_chunk.strip())
+                current_chunk = chunk
+        if current_chunk: chunks.append(current_chunk.strip())
+        return [c for c in chunks if c]
 
     @web_app.post("/")
-    async def process_audio(base_audio: UploadFile = File(...), ref_audio: UploadFile = File(...)):
+    async def process_audio(
+        target_text: str = Form(...), # 🚀 ယခုအခါ မြန်မာစာကို တိုက်ရိုက် လက်ခံမည်
+        ref_audio: UploadFile = File(...)
+    ):
         try:
-            base_bytes = await base_audio.read()
             ref_bytes = await ref_audio.read()
-            
             with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_ref:
                 tmp_ref.write(ref_bytes)
                 ref_path = tmp_ref.name
-                
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_base:
-                tmp_base.write(base_bytes)
-                base_path = tmp_base.name
 
-            # အသံဖိုင်များကို AI မှ အကောင်းဆုံး ခွဲခြမ်းစိတ်ဖြာနိုင်ရန် 30s အပိုင်းကြီးများ ပိုင်းခြားမည်
-            audio = AudioSegment.from_file(base_path)
-            chunk_length_ms = 30000
-            chunks = [audio[i:i + chunk_length_ms] for i in range(0, len(audio), chunk_length_ms)]
-            combined_audio = AudioSegment.empty()
-
-            for chunk in chunks:
-                chunk_path = tempfile.mktemp(suffix=".wav")
-                chunk.export(chunk_path, format="wav")
-                
-                chunk_out_path = tempfile.mktemp(suffix=".wav")
-                
-                # Zero-shot AI အင်ဂျင်ဖြင့် အသံအရောင်နှင့် လေယူလေသိမ်းကို အတိအကျ ကူးယူခြင်း
-                tts.voice_conversion_to_file(source_wav=chunk_path, target_wav=ref_path, file_path=chunk_out_path)
-                
-                converted_chunk = AudioSegment.from_file(chunk_out_path)
-                combined_audio += converted_chunk
-                
-                os.unlink(chunk_path)
-                os.unlink(chunk_out_path)
-
-            final_out_path = tempfile.mktemp(suffix=".wav")
+            text_chunks = split_text_into_chunks(target_text)
+            generated_audio_list = []
+            target_sample_rate = 24000
             
-            # အသံပိုမိုကြည်လင် သဘာဝကျစေရန် Audio Normalize အနည်းငယ် လုပ်ပေးမည်
-            combined_audio = combined_audio.normalize()
-            combined_audio.export(final_out_path, format="wav")
+            # Reference Voice ဖတ်ခြင်း
+            ref_audio_data, sr = librosa.load(ref_path, sr=16000)
+            ref_audio_tensor = torch.tensor(ref_audio_data).unsqueeze(0).to(device)
+
+            # AI မှ မြန်မာစာကို တိုက်ရိုက်ဖတ်၍ အသံပြောင်းခြင်း
+            for chunk in text_chunks:
+                inputs = tokenizer(chunk, return_tensors="pt").to(device)
+                with torch.no_grad():
+                    output = model.generate(
+                        **inputs,
+                        prompt_audio=ref_audio_tensor,
+                        prompt_sample_rate=16000,
+                        output_sample_rate=target_sample_rate
+                    )
+                    if isinstance(output, torch.Tensor):
+                        audio_chunk = output.squeeze().cpu().numpy()
+                    else:
+                        audio_chunk = output
+                    generated_audio_list.append(audio_chunk)
+
+            # အသံများ ပြန်ပေါင်းခြင်း
+            final_audio = np.concatenate(generated_audio_list)
+            final_out_path = tempfile.mktemp(suffix=".wav")
+            sf.write(final_out_path, final_audio, target_sample_rate)
             
             with open(final_out_path, 'rb') as f:
                 final_bytes = f.read()
                 
-            os.unlink(base_path)
             os.unlink(ref_path)
             os.unlink(final_out_path)
 
             return Response(content=final_bytes, media_type="audio/wav")
             
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"AI Engine Error: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"VoxCPM2 GPU Error: {str(e)}")
             
     return web_app
