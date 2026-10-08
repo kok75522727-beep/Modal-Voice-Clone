@@ -19,7 +19,7 @@ image = (
 
 app = modal.App("oneteam-voice-clone-pro")
 
-@app.function(image=image, gpu="T4", timeout=1500)
+@app.function(image=image, gpu="L4", timeout=1500)
 @modal.asgi_app()
 def my_voice_clone_api():
     from fastapi import FastAPI, UploadFile, File, HTTPException, Form
